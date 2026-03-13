@@ -39,6 +39,72 @@ def register_reminder_tools(mcp: FastMCP, store: EventKitStore) -> None:
             }
 
     @mcp.tool()
+    def reminders_create_list(name: str) -> dict:
+        """Create a new reminder list.
+
+        Args:
+            name: Name for the new reminder list
+        """
+        try:
+            reminder_list = store.create_reminder_list(name=name)
+
+            return {
+                "success": True,
+                "list": reminder_list,
+                "message": f"Reminder list '{name}' created successfully",
+            }
+        except PermissionError as e:
+            return {
+                "success": False,
+                "error": "permission_denied",
+                "message": str(e),
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "unexpected_error",
+                "message": str(e),
+            }
+
+    @mcp.tool()
+    def reminders_move_to_list(reminder_id: str, list_name: str) -> dict:
+        """Move an existing reminder to a different list.
+
+        Args:
+            reminder_id: The reminder identifier
+            list_name: Name of the target reminder list
+        """
+        try:
+            reminder = store.move_reminder_to_list(
+                reminder_id=reminder_id,
+                list_name=list_name,
+            )
+
+            return {
+                "success": True,
+                "reminder": reminder,
+                "message": f"Reminder moved to '{list_name}' successfully",
+            }
+        except PermissionError as e:
+            return {
+                "success": False,
+                "error": "permission_denied",
+                "message": str(e),
+            }
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": "not_found",
+                "message": str(e),
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "unexpected_error",
+                "message": str(e),
+            }
+
+    @mcp.tool()
     def reminders_list(
         list_name: Optional[str] = None,
         include_completed: bool = False,

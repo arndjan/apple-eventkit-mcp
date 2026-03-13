@@ -506,6 +506,65 @@ class EventKitStore:
 
             return True
 
+    def create_reminder_list(self, name: str) -> dict:
+        """Create a new reminder list."""
+        require_reminders_permission()
+        with self._lock:
+            calendar = EventKit.EKCalendar.calendarForEntityType_eventStore_(
+                EventKit.EKEntityTypeReminder, self._store
+            )
+            calendar.setTitle_(name)
+
+            # Find a local source for the new list
+            local_source = None
+            for source in self._store.sources():
+                if source.sourceType() == EventKit.EKSourceTypeLocal:
+                    local_source = source
+                    break
+
+            # Fallback: use the source from the default reminder list
+            if not local_source:
+                default_list = self._store.defaultCalendarForNewReminders()
+                if default_list:
+                    local_source = default_list.source()
+
+            if not local_source:
+                raise Exception("No local source found for creating reminder list")
+
+            calendar.setSource_(local_source)
+
+            success, error = self._store.saveCalendar_commit_error_(
+                calendar, True, None
+            )
+
+            if not success:
+                raise Exception(f"Failed to create reminder list: {error}")
+
+            return self._calendar_to_dict(calendar)
+
+    def move_reminder_to_list(self, reminder_id: str, list_name: str) -> dict:
+        """Move a reminder to a different list."""
+        require_reminders_permission()
+        with self._lock:
+            reminder = self._find_reminder_by_any_id(reminder_id)
+            if not reminder:
+                raise ValueError(f"Reminder not found: {reminder_id}")
+
+            target_calendar = self._find_reminder_list_unlocked(list_name)
+            if not target_calendar:
+                raise ValueError(f"Reminder list not found: {list_name}")
+
+            reminder.setCalendar_(target_calendar)
+
+            success, error = self._store.saveReminder_commit_error_(
+                reminder, True, None
+            )
+
+            if not success:
+                raise Exception(f"Failed to move reminder: {error}")
+
+            return self._reminder_to_dict(reminder)
+
     def search_reminders(
         self,
         query: str,
