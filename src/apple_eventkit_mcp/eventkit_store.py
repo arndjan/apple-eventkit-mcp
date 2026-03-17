@@ -4,6 +4,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
+import objc
 import EventKit
 from Cocoa import NSDate, NSDateComponents, NSCalendar, NSURL
 
@@ -117,7 +118,8 @@ class EventKitStore:
         notes: Optional[str] = None,
         url: Optional[str] = None,
         is_all_day: bool = False,
-        tags: Optional[list[str]] = None
+        tags: Optional[list[str]] = None,
+        attendees: Optional[list[dict]] = None
     ) -> dict:
         """Create a new calendar event."""
         require_calendar_permission()
@@ -149,6 +151,10 @@ class EventKitStore:
             final_notes = merge_notes_with_tags(notes_with_attribution, tags)
             event.setNotes_(final_notes)
 
+            # Add attendees
+            if attendees:
+                self._add_attendees_to_event(event, attendees)
+
             # Save
             success, error = self._store.saveEvent_span_error_(
                 event, EventKit.EKSpanThisEvent, None
@@ -169,7 +175,8 @@ class EventKitStore:
         location: Optional[str] = None,
         notes: Optional[str] = None,
         url: Optional[str] = None,
-        tags: Optional[list[str]] = None
+        tags: Optional[list[str]] = None,
+        attendees: Optional[list[dict]] = None
     ) -> dict:
         """Edit an existing event."""
         require_calendar_permission()
@@ -204,6 +211,10 @@ class EventKitStore:
 
                 final_notes = merge_notes_with_tags(clean_notes, existing_tags)
                 event.setNotes_(final_notes if final_notes else None)
+
+            # Add attendees (replaces existing attendees)
+            if attendees is not None:
+                self._add_attendees_to_event(event, attendees)
 
             # Determine span
             ek_span = (
@@ -609,6 +620,29 @@ class EventKitStore:
         notes = event.notes() or ""
         clean_notes, tags = decode_tags(notes)
 
+        # Extract attendees
+        attendees = []
+        if event.attendees():
+            for participant in event.attendees():
+                attendee_dict = {
+                    "name": participant.name() if participant.name() else None,
+                    "email": None,
+                    "status": self._participant_status_to_str(participant.participantStatus()),
+                    "role": self._participant_role_to_str(participant.participantRole()),
+                    "type": self._participant_type_to_str(participant.participantType()),
+                }
+                # Email from emailAddress method (available on EKAttendee/EKParticipant)
+                try:
+                    attendee_dict["email"] = participant.emailAddress()
+                except Exception:
+                    # Fall back to URL-based email extraction
+                    url = participant.URL()
+                    if url:
+                        url_str = str(url)
+                        if url_str.startswith("mailto:"):
+                            attendee_dict["email"] = url_str[7:]
+                attendees.append(attendee_dict)
+
         return {
             "id": event.calendarItemIdentifier(),
             "external_id": event.calendarItemExternalIdentifier(),
@@ -622,6 +656,7 @@ class EventKitStore:
             "is_all_day": event.isAllDay(),
             "url": str(event.URL()) if event.URL() else None,
             "has_recurrence": event.hasRecurrenceRules(),
+            "attendees": attendees,
         }
 
     def _reminder_to_dict(self, reminder: EventKit.EKReminder) -> dict:
@@ -652,6 +687,71 @@ class EventKitStore:
             "completed": reminder.isCompleted(),
             "completion_date": self._nsdate_to_iso(reminder.completionDate()),
         }
+
+    def _add_attendees_to_event(
+        self, event: EventKit.EKEvent, attendees: list[dict]
+    ) -> None:
+        """Add attendees to an event using the private EKAttendee API.
+
+        Each attendee dict should have 'email' (required) and optionally 'name'.
+        Uses the undocumented EKAttendee class — works on macOS with CalDAV/Exchange calendars.
+        """
+        try:
+            EKAttendee = objc.lookUpClass("EKAttendee")
+        except objc.nosuchclass_error:
+            raise Exception(
+                "EKAttendee class not available on this system. "
+                "Adding attendees programmatically is not supported."
+            )
+
+        for attendee_info in attendees:
+            email = attendee_info.get("email")
+            if not email:
+                continue
+            name = attendee_info.get("name", email)
+            attendee = EKAttendee.alloc().initWithName_emailAddress_phoneNumber_url_(
+                name, email, None, None
+            )
+            event.addAttendee_(attendee)
+
+    @staticmethod
+    def _participant_status_to_str(status: int) -> str:
+        """Convert EKParticipantStatus to string."""
+        status_map = {
+            0: "unknown",
+            1: "pending",
+            2: "accepted",
+            3: "declined",
+            4: "tentative",
+            5: "delegated",
+            6: "completed",
+            7: "in_process",
+        }
+        return status_map.get(status, "unknown")
+
+    @staticmethod
+    def _participant_role_to_str(role: int) -> str:
+        """Convert EKParticipantRole to string."""
+        role_map = {
+            0: "unknown",
+            1: "required",
+            2: "optional",
+            3: "chair",
+            4: "non_participant",
+        }
+        return role_map.get(role, "unknown")
+
+    @staticmethod
+    def _participant_type_to_str(ptype: int) -> str:
+        """Convert EKParticipantType to string."""
+        type_map = {
+            0: "unknown",
+            1: "person",
+            2: "room",
+            3: "resource",
+            4: "group",
+        }
+        return type_map.get(ptype, "unknown")
 
     def _find_calendar_unlocked(self, name: str) -> Optional[EventKit.EKCalendar]:
         """Find calendar by name without acquiring lock (caller must hold lock)."""

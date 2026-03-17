@@ -222,7 +222,8 @@ def register_calendar_tools(mcp: FastMCP, store: EventKitStore) -> None:
         notes: Optional[str] = None,
         url: Optional[str] = None,
         is_all_day: bool = False,
-        tags: Optional[list[str]] = None
+        tags: Optional[list[str]] = None,
+        attendees: Optional[list[dict]] = None
     ) -> dict:
         """Create a new calendar event.
 
@@ -236,6 +237,7 @@ def register_calendar_tools(mcp: FastMCP, store: EventKitStore) -> None:
             url: Associated URL (optional)
             is_all_day: All-day event flag (default: false)
             tags: Tags to apply (optional)
+            attendees: List of attendee dicts with 'email' (required) and 'name' (optional)
         """
         try:
             start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
@@ -250,7 +252,8 @@ def register_calendar_tools(mcp: FastMCP, store: EventKitStore) -> None:
                 notes=notes,
                 url=url,
                 is_all_day=is_all_day,
-                tags=tags
+                tags=tags,
+                attendees=attendees
             )
 
             return {
@@ -287,7 +290,8 @@ def register_calendar_tools(mcp: FastMCP, store: EventKitStore) -> None:
         location: Optional[str] = None,
         notes: Optional[str] = None,
         url: Optional[str] = None,
-        tags: Optional[list[str]] = None
+        tags: Optional[list[str]] = None,
+        attendees: Optional[list[dict]] = None
     ) -> dict:
         """Edit an existing calendar event.
 
@@ -301,6 +305,7 @@ def register_calendar_tools(mcp: FastMCP, store: EventKitStore) -> None:
             notes: New notes (optional)
             url: New URL (optional)
             tags: New tags - replaces existing tags (optional)
+            attendees: List of attendee dicts with 'email' (required) and 'name' (optional)
         """
         if span not in ("this_event", "future_events"):
             return {
@@ -326,7 +331,8 @@ def register_calendar_tools(mcp: FastMCP, store: EventKitStore) -> None:
                 location=location,
                 notes=notes,
                 url=url,
-                tags=tags
+                tags=tags,
+                attendees=attendees
             )
 
             return {
