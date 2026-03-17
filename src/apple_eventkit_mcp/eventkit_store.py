@@ -704,6 +704,7 @@ class EventKitStore:
                 "Adding attendees programmatically is not supported."
             )
 
+        new_attendees = []
         for attendee_info in attendees:
             email = attendee_info.get("email")
             if not email:
@@ -712,7 +713,10 @@ class EventKitStore:
             attendee = EKAttendee.alloc().initWithName_emailAddress_phoneNumber_url_(
                 name, email, None, None
             )
-            event.addAttendee_(attendee)
+            new_attendees.append(attendee)
+
+        # Use setAttendees_ to replace the full list (addAttendee_ only appends)
+        event.setAttendees_(new_attendees)
 
     @staticmethod
     def _participant_status_to_str(status: int) -> str:
